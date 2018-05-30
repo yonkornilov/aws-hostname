@@ -1,15 +1,19 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
+	"github.com/aws/aws-sdk-go/awstesting/unit"
+	"github.com/aws/aws-sdk-go/service/ec2"
 )
 
 // https://github.com/aws/aws-sdk-go/blob/master/aws/ec2metadata/api_test.go#L21
-const instanceIdentityDocumentJSON = `{
+const instanceIdentityDocument = `{
   "devpayProductCodes" : null,
   "availabilityZone" : "us-east-1d",
   "privateIp" : "10.158.112.84",
@@ -26,15 +30,30 @@ const instanceIdentityDocumentJSON = `{
   "architecture" : "x86_64"
 }`
 
-func TestGenerateHostname(t *testing.T) {
-	instanceIdentityDocument := ec2metadata.EC2InstanceIdentityDocument{}
-	err := json.Unmarshal([]byte(instanceIdentityDocumentJSON), &instanceIdentityDocument)
+// https://github.com/aws/aws-sdk-go/blob/master/aws/ec2metadata/api_test.go#L52
+func initTestServer(path string, resp string) *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.RequestURI != path {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+
+		w.Write([]byte(resp))
+	}))
+}
+
+func TestGetInstance(t *testing.T) {
+	server := initTestServer(
+		"/latest/dynamic/instance-identity/document",
+		instanceIdentityDocument,
+	)
+	defer server.Close()
+	meta := ec2metadata.New(unit.Session, &aws.Config{Endpoint: aws.String(server.URL + "/latest")})
+	svc := ec2.New(unit.Session)
+
+	instance, err := getInstance(meta, svc)
 	if err != nil {
 		t.Fatal(err)
 	}
-	hostname, err := GenerateHostname(instanceIdentityDocument)
-	if err != nil {
-		t.Fatal(err)
-	}
-	fmt.Printf("hostname is: %s\n", *hostname)
+	fmt.Printf("hostname is: %s\n", *instance)
 }

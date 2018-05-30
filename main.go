@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"io/ioutil"
 	"log"
@@ -25,7 +26,9 @@ func main() {
 	flag.StringVar(&ec2TagName, "tag", "Name", "Which tag to write the hostname to")
 	flag.Parse()
 
-	instance, err := getInstance()
+	meta := ec2metadata.New(session.New())
+	svc := ec2.New(session.New())
+	instance, err := getInstance(meta, svc)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -74,15 +77,12 @@ func main() {
 	log.Printf("Set hostname to: %s", *hostname)
 }
 
-func getInstance() (*ec2.Instance, error) {
-
-	meta := ec2metadata.New(session.New())
+func getInstance(meta *ec2metadata.EC2Metadata, svc *ec2.EC2) (*ec2.Instance, error) {
 
 	identity, err := meta.GetInstanceIdentityDocument()
 	if err != nil {
 		log.Fatal(err)
 	}
-	svc := ec2.New(session.New())
 	describedInstances, err := svc.DescribeInstances(&ec2.DescribeInstancesInput{
 		Filters: []*ec2.Filter{
 			{
@@ -93,6 +93,10 @@ func getInstance() (*ec2.Instance, error) {
 			},
 		},
 	})
+
+	if describedInstances.Reservations == nil {
+		return nil, errors.New("Nil")
+	}
 
 	if describedInstances.Reservations[0] != nil && describedInstances.Reservations[0].Instances[0] != nil {
 		return describedInstances.Reservations[0].Instances[0], nil
